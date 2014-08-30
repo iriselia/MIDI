@@ -1,0 +1,184 @@
+/*
+ * example6.c
+ *
+ *  Created on: Dec 21, 2011
+ *      Author: David J. Rager
+ *       Email: djrager@fourthwoods.com
+ *
+ * This code is hereby released into the public domain per the Creative Commons
+ * Public Domain dedication.
+ *
+ * http://http://creativecommons.org/publicdomain/zero/1.0/
+ */
+#include <windows.h>
+#include <mmsystem.h>
+#include <stdio.h>
+
+#pragma pack(push, 1)
+
+struct _mid_header {
+	unsigned int	id;		// identifier "MThd"
+	unsigned int	size;	// always 6 in big-endian format
+	unsigned short	format;	// big-endian format
+	unsigned short  tracks;	// number of tracks, big-endian
+	unsigned short	ticks;	// number of ticks per quarter note, big-endian
+};
+
+struct _mid_track {
+	unsigned int	id;		// identifier "MTrk"
+	unsigned int	length;	// track length, big-endian
+};
+
+#pragma pack(pop)
+
+static unsigned char* load_file(const unsigned char* filename, unsigned int* len)
+{
+	unsigned char* buf;
+	unsigned int ret;
+	FILE* f = fopen((char*)filename, "rb");
+	if(f == NULL)
+		return 0;
+
+	fseek(f, 0, SEEK_END);
+	*len = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	buf = (unsigned char*)malloc(*len);
+	if(buf == 0)
+	{
+		fclose(f);
+		return 0;
+	}
+
+	ret = fread(buf, 1, *len, f);
+	fclose(f);
+
+	if(ret != *len)
+	{
+		free(buf);
+		return 0;
+	}
+
+	return buf;
+}
+
+static unsigned long read_var_long(unsigned char* buf, unsigned int* bytesread)
+{
+	unsigned long var = 0;
+	unsigned char c;
+
+	*bytesread = 0;
+
+	do
+	{
+		c = buf[(*bytesread)++];
+		var = (var << 7) + (c & 0x7f);
+	}
+	while(c & 0x80);
+
+	return var;
+}
+
+static unsigned int get_buffer(unsigned char* buf, unsigned int len, unsigned int** out, unsigned int* outlen)
+{
+	unsigned char* tmp;
+	unsigned int* streambuf;
+	unsigned int streamlen = 0;
+	unsigned int bytesread;
+
+	unsigned int buflen = 64;
+
+	tmp = buf;
+	*out = NULL;
+	*outlen = 0;
+
+	streambuf = (unsigned int*)malloc(sizeof(unsigned int) * buflen);
+	if(streambuf == NULL)
+		return 0;
+
+	memset(streambuf, 0, sizeof(unsigned int) * buflen);
+
+	tmp += sizeof(struct _mid_header);
+	tmp += sizeof(struct _mid_track);
+
+	while(tmp < buf + len)
+	{
+		unsigned char cmd;
+		unsigned int time = read_var_long(tmp, &bytesread);
+		unsigned int msg = 0;
+
+		tmp += bytesread;
+
+		cmd = *tmp++;
+		if((cmd & 0xf0) != 0xf0) // normal command
+		{
+			msg = ((unsigned long)cmd) |
+				  ((unsigned long)*tmp++ << 8);
+
+			if(!((cmd & 0xf0) == 0xc0 || (cmd & 0xf0) == 0xd0))
+				msg |= ((unsigned long)*tmp++ << 16);
+
+			streambuf[streamlen++] = time;
+			streambuf[streamlen++] = msg;
+		}
+		else if(cmd == 0xff)
+		{
+			cmd = *tmp++; // cmd should be meta-event (0x2f for end of track)
+			cmd = *tmp++; // cmd should be meta-event length
+			tmp += cmd;
+		}
+	}
+
+	*out = streambuf;
+	*outlen = streamlen;
+
+	return 0;
+}
+
+unsigned int example6()
+{
+	unsigned int* streambuf = NULL;
+	unsigned int streamlen = 0;
+
+	unsigned char* midibuf = NULL;
+	unsigned int midilen = 0;
+
+	unsigned int err;
+	HMIDIOUT out;
+	const unsigned int PPQN_CLOCK = 5;
+	unsigned int i;
+
+	err = midiOutOpen(&out, 0, 0, 0, CALLBACK_NULL);
+	if (err != MMSYSERR_NOERROR)
+		printf("error opening default MIDI device: %d\n", err);
+	else
+		printf("successfully opened default MIDI device\n");
+
+	midibuf = load_file((unsigned char*)"example6.mid", &midilen);
+	if(midibuf == NULL)
+	{
+		printf("could not open example6.mid\n");
+		return 0;
+	}
+
+	get_buffer(midibuf, midilen, &streambuf, &streamlen);
+
+	i = 0;
+	while(i < streamlen)
+	{
+	    unsigned int time = streambuf[i++];
+
+		Sleep(time * PPQN_CLOCK);
+
+		err = midiOutShortMsg(out, streambuf[i++]);
+		if(err != MMSYSERR_NOERROR)
+			printf("error sending command: %d\n", err);
+	}
+
+	midiOutClose(out);
+	free(streambuf);
+	free(midibuf);
+
+	return 0;
+}
+
