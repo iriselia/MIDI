@@ -16,7 +16,7 @@
 
 #pragma pack(push, 1)
 
-struct _mid_header {
+struct MIDIHeaderInfo {
 	unsigned int	id;		// identifier "MThd"
 	unsigned int	size;	// always 6 in big-endian format
 	unsigned short	format;	// big-endian format
@@ -24,7 +24,7 @@ struct _mid_header {
 	unsigned short	ticks;	// number of ticks per quarter note, big-endian
 };
 
-struct _mid_track {
+struct MIDITrackInfo {
 	unsigned int	id;		// identifier "MTrk"
 	unsigned int	length;	// track length, big-endian
 };
@@ -62,7 +62,7 @@ static unsigned char* load_file(const unsigned char* filename, unsigned int* len
 	return buf;
 }
 
-static unsigned long read_var_long(unsigned char* buf, unsigned int* bytesread)
+static unsigned long read_var_int(unsigned char* buf, unsigned int* bytesread)
 {
 	unsigned long var = 0;
 	unsigned char c;
@@ -98,13 +98,13 @@ static unsigned int get_buffer(unsigned char* buf, unsigned int len, unsigned in
 
 	memset(streambuf, 0, sizeof(unsigned int) * buflen);
 
-	tmp += sizeof(struct _mid_header);
-	tmp += sizeof(struct _mid_track);
+	tmp += sizeof(struct MIDIHeaderInfo);
+	tmp += sizeof(struct MIDITrackInfo);
 
 	while(tmp < buf + len)
 	{
 		unsigned char cmd;
-		unsigned int time = read_var_long(tmp, &bytesread);
+		unsigned int time = read_var_int(tmp, &bytesread);
 		unsigned int msg = 0;
 
 		tmp += bytesread;

@@ -13,31 +13,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-unsigned int example1();
-unsigned int example2();
-unsigned int example3();
-unsigned int example4();
-unsigned int example5();
-unsigned int example6();
-unsigned int example7();
+//unsigned int example1();
+//unsigned int example2();
+//unsigned int example3();
+//unsigned int example4();
+//unsigned int example5();
+//unsigned int example6();
+//unsigned int example7();
 unsigned int example8();
 unsigned int example9();
-unsigned int example10();
+//unsigned int example10();
 
 typedef unsigned int (*example)();
 
 example arr[] = {
-		example1,
-		example2,
-		example3,
-		example4,
-		example5,
-		example6,
-		example7,
+		//example1,
+		//example2,
+		//example3,
+		//example4,
+		//example5,
+		//example6,
+		//example7,
 		example8,
 		example9
 };
-
+/*
 int main(int argc, char* argv[])
 {
 	unsigned int i;
@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
 
 //	i = atoi(argv[1]) - 1;
 
-	i = 7;
+	i = 8;
 
 	if(i < sizeof(arr) / sizeof(example))
 		return arr[i]();
@@ -57,3 +57,4 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+//*/

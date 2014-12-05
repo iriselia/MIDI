@@ -18,7 +18,7 @@
 
 #pragma pack(push, 1)
 
-struct _mid_header {
+struct MIDIHeaderInfo {
 	unsigned int	id;		// identifier "MThd"
 	unsigned int	size;	// always 6 in big-endian format
 	unsigned short	format;	// big-endian format
@@ -26,24 +26,24 @@ struct _mid_header {
 	unsigned short	ticks;	// number of ticks per quarter note, big-endian
 };
 
-struct _mid_track {
+struct MIDITrackInfo {
 	unsigned int	id;		// identifier "MTrk"
 	unsigned int	length;	// track length, big-endian
 };
 
 #pragma pack(pop)
 
-struct trk {
-	struct _mid_track* track;
-	unsigned char* buf;
-	unsigned char last_event;
-	unsigned int absolute_time;
+struct MIDITrack {
+	struct MIDITrackInfo* m_pTrackInfo;
+	unsigned char* m_pBuffer;
+	unsigned char m_lastEvent;
+	unsigned int m_absTime;
 };
 
-struct evt {
-	unsigned int absolute_time;
-	unsigned char* data;
-	unsigned char event;
+struct MIDIEvent {
+	unsigned int m_absTime;
+	unsigned char* m_pData;
+	unsigned char m_event;
 };
 
 static unsigned char* load_file(const unsigned char* filename, unsigned int* len)
@@ -77,7 +77,7 @@ static unsigned char* load_file(const unsigned char* filename, unsigned int* len
 	return buf;
 }
 
-static unsigned long read_var_long(unsigned char* buf, unsigned int* bytesread)
+static unsigned long read_var_int(unsigned char* buf, unsigned int* bytesread)
 {
 	unsigned long var = 0;
 	unsigned char c;
@@ -94,43 +94,43 @@ static unsigned long read_var_long(unsigned char* buf, unsigned int* bytesread)
 	return var;
 }
 
-static unsigned short swap_bytes_short(unsigned short in)
+static unsigned short byteSwapShort(unsigned short in)
 {
 	return ((in << 8) | (in >> 8));
 }
 
-static unsigned long swap_bytes_long(unsigned long in)
+static unsigned long byteSwapInt(unsigned long in)
 {
 	unsigned short *p;
 	p = (unsigned short*)&in;
 
-	return (  (((unsigned long)swap_bytes_short(p[0])) << 16) |
-				(unsigned long)swap_bytes_short(p[1]));
+	return (  (((unsigned long)byteSwapShort(p[0])) << 16) |
+				(unsigned long)byteSwapShort(p[1]));
 }
 
-static struct evt get_next_event(const struct trk* track)
+static struct MIDIEvent getNextEvent(const struct MIDITrack* track)
 {
 	unsigned char* buf;
-	struct evt e;
+	struct MIDIEvent e;
 	unsigned int bytesread;
 	unsigned int time;
 
-	buf = track->buf;
+	buf = track->m_pBuffer;
 
-	time = read_var_long(buf, &bytesread);
+	time = read_var_int(buf, &bytesread);
 	buf += bytesread;
 
-	e.absolute_time = track->absolute_time + time;
-	e.data = buf;
-	e.event = *e.data;
+	e.m_absTime = track->m_absTime + time;
+	e.m_pData = buf;
+	e.m_event = *e.m_pData;
 
 	return e;
 }
 
-static int is_track_end(const struct evt* e)
+static int isTrackEnd(const struct MIDIEvent* e)
 {
-	if(e->event == 0xff) // meta-event?
-		if(*(e->data + 1) == 0x2f) // track end?
+	if(e->m_event == 0xff) // meta-event?
+		if(*(e->m_pData + 1) == 0x2f) // track end?
 			return 1;
 
 	return 0;
@@ -138,8 +138,8 @@ static int is_track_end(const struct evt* e)
 
 static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, unsigned int** out, unsigned int* outlen)
 {
-	struct _mid_header* hdr = NULL;
-	struct trk* tracks = NULL;
+	struct MIDIHeaderInfo* hdr = NULL;
+	struct MIDITrack* tracks = NULL;
 
 	unsigned short nTracks = 0;
 	unsigned int i;
@@ -156,19 +156,19 @@ static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, uns
 	streambuf = (unsigned int*)malloc(sizeof(unsigned int) * streambuflen);
 	memset(streambuf, 0, sizeof(unsigned int) * streambuflen);
 
-	hdr = (struct _mid_header*)midibuf;
-	midibuf += sizeof(struct _mid_header);
-	nTracks = swap_bytes_short(hdr->tracks);
+	hdr = (struct MIDIHeaderInfo*)midibuf;
+	midibuf += sizeof(struct MIDIHeaderInfo);
+	nTracks = byteSwapShort(hdr->tracks);
 
-	tracks = (struct trk*)malloc(nTracks * sizeof(struct trk));
+	tracks = (struct MIDITrack*)malloc(nTracks * sizeof(struct MIDITrack));
 	for(i = 0; i < nTracks; i++)
 	{
-		tracks[i].track = (struct _mid_track*)midibuf;
-		tracks[i].buf = midibuf + sizeof(struct _mid_track);
-		tracks[i].absolute_time = 0;
-		tracks[i].last_event = 0;
+		tracks[i].m_pTrackInfo = (struct MIDITrackInfo*)midibuf;
+		tracks[i].m_pBuffer = midibuf + sizeof(struct MIDITrackInfo);
+		tracks[i].m_absTime = 0;
+		tracks[i].m_lastEvent = 0;
 
-		midibuf += sizeof(struct _mid_track) + swap_bytes_long(tracks[i].track->length);
+		midibuf += sizeof(struct MIDITrackInfo) + byteSwapInt(tracks[i].m_pTrackInfo->length);
 	}
 
 	while(TRUE)
@@ -178,15 +178,15 @@ static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, uns
 
 		unsigned int idx = -1;
 
-		struct evt evt;
+		struct MIDIEvent MIDIEvent;
 
 		// get the next event
 		for(i = 0; i < nTracks; i++)
 		{
-			evt = get_next_event(&tracks[i]);
-			if(!(is_track_end(&evt)) && (evt.absolute_time < time))
+			MIDIEvent = getNextEvent(&tracks[i]);
+			if(!(isTrackEnd(&MIDIEvent)) && (MIDIEvent.m_absTime < time))
 			{
-				time = evt.absolute_time;
+				time = MIDIEvent.m_absTime;
 				idx = i;
 			}
 		}
@@ -195,16 +195,16 @@ static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, uns
 		if(idx == -1)
 			break; // we're done
 
-		evt = get_next_event(&tracks[idx]);
+		MIDIEvent = getNextEvent(&tracks[idx]);
 
-		tracks[idx].absolute_time = evt.absolute_time;
-		time = tracks[idx].absolute_time - currTime;
-		currTime = tracks[idx].absolute_time;
+		tracks[idx].m_absTime = MIDIEvent.m_absTime;
+		time = tracks[idx].m_absTime - currTime;
+		currTime = tracks[idx].m_absTime;
 
-		if(evt.event == 0xff) // meta-event
+		if(MIDIEvent.m_event == 0xff) // meta-event
 		{
-			evt.data++; // skip the event byte
-			unsigned char meta = *evt.data++; // read the meta-event byte
+			MIDIEvent.m_pData++; // skip the event byte
+			unsigned char meta = *MIDIEvent.m_pData++; // read the meta-event byte
 			unsigned int len;
 
 			switch(meta)
@@ -212,10 +212,10 @@ static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, uns
 			case 0x51:
 				{
 					unsigned char a, b, c;
-					len = *evt.data++; // get the length byte, should be 3
-					a = *evt.data++;
-					b = *evt.data++;
-					c = *evt.data++;
+					len = *MIDIEvent.m_pData++; // get the length byte, should be 3
+					a = *MIDIEvent.m_pData++;
+					b = *MIDIEvent.m_pData++;
+					c = *MIDIEvent.m_pData++;
 
 					msg = ((unsigned long)TEMPO_EVT << 24) |
 						  ((unsigned long)a << 16) |
@@ -255,21 +255,21 @@ static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, uns
 			case 0x59: // key signature
 			case 0x7f:
 			default:
-				len = *evt.data++; // ignore event, skip all data
-				evt.data += len;
+				len = *MIDIEvent.m_pData++; // ignore event, skip all data
+				MIDIEvent.m_pData += len;
 				break;
 			}
 
-			tracks[idx].buf = evt.data;
+			tracks[idx].m_pBuffer = MIDIEvent.m_pData;
 		}
-		else if(!(evt.event & 0x80)) // running mode
+		else if(!(MIDIEvent.m_event & 0x80)) // running mode
 		{
-			unsigned char last = tracks[idx].last_event;
+			unsigned char last = tracks[idx].m_lastEvent;
 			msg = ((unsigned long)last) |
-				  ((unsigned long)*evt.data++ << 8);
+				((unsigned long)*MIDIEvent.m_pData++ << 8);
 
 			if(!((last & 0xf0) == 0xc0 || (last & 0xf0) == 0xd0))
-				msg |= ((unsigned long)*evt.data++ << 16);
+				msg |= ((unsigned long)*MIDIEvent.m_pData++ << 16);
 
 			while(streamlen + 2 > streambuflen)
 			{
@@ -289,17 +289,17 @@ static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, uns
 			streambuf[streamlen++] = time;
 			streambuf[streamlen++] = msg;
 
-			tracks[idx].buf = evt.data;
+			tracks[idx].m_pBuffer = MIDIEvent.m_pData;
 		}
-		else if((evt.event & 0xf0) != 0xf0) // normal command
+		else if ((MIDIEvent.m_event & 0xf0) != 0xf0) // normal command
 		{
-			tracks[idx].last_event = evt.event;
-			evt.data++; // skip the event byte
-			msg = ((unsigned long)evt.event) |
-				  ((unsigned long)*evt.data++ << 8);
+			tracks[idx].m_lastEvent = MIDIEvent.m_event;
+			MIDIEvent.m_pData++; // skip the event byte
+			msg = ((unsigned long)MIDIEvent.m_event) |
+				((unsigned long)*MIDIEvent.m_pData++ << 8);
 
-			if(!((evt.event & 0xf0) == 0xc0 || (evt.event & 0xf0) == 0xd0))
-				msg |= ((unsigned long)*evt.data++ << 16);
+			if (!((MIDIEvent.m_event & 0xf0) == 0xc0 || (MIDIEvent.m_event & 0xf0) == 0xd0))
+				msg |= ((unsigned long)*MIDIEvent.m_pData++ << 16);
 
 			while(streamlen + 2 > streambuflen)
 			{
@@ -319,12 +319,12 @@ static unsigned int get_buffer(unsigned char* midibuf, unsigned int midilen, uns
 			streambuf[streamlen++] = time;
 			streambuf[streamlen++] = msg;
 
-			tracks[idx].buf = evt.data;
+			tracks[idx].m_pBuffer = MIDIEvent.m_pData;
 		}
 		else
 		{
 			// not handling sysex events yet
-			printf("unknown event %2x", evt.event);
+			printf("unknown event %2x", MIDIEvent.m_event);
 			exit(1);
 		}
 
@@ -373,7 +373,7 @@ unsigned int example8()
 	unsigned int PPQN_CLOCK;
 	unsigned int i;
 
-	struct _mid_header* hdr;
+	struct MIDIHeaderInfo* hdr;
 
 	err = midiOutOpen(&out, 0, 0, 0, CALLBACK_NULL);
 	if (err != MMSYSERR_NOERROR)
@@ -388,9 +388,9 @@ unsigned int example8()
 		return 0;
 	}
 
-	hdr = (struct _mid_header*)midibuf;
+	hdr = (struct MIDIHeaderInfo*)midibuf;
 
-	PPQN_CLOCK = 1 / swap_bytes_short(hdr->ticks);
+	PPQN_CLOCK = 1 / byteSwapShort(hdr->ticks);
 
 	get_buffer(midibuf, midilen, &streambuf, &streamlen);
 
@@ -405,7 +405,7 @@ unsigned int example8()
 		if(msg & 0xff000000) // tempo change
 		{
 			msg = msg & 0x00ffffff;
-			PPQN_CLOCK = msg / swap_bytes_short(hdr->ticks);
+			PPQN_CLOCK = msg / byteSwapShort(hdr->ticks);
 		}
 		else
 		{
