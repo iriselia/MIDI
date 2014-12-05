@@ -19,7 +19,9 @@ include(SetOutputDirectories)
 include(SourceFileScanner)
 
 # Add compile flags and preprocessor definitions
+if(MSVC)
 add_definitions( "/FC")
+endif()
 
 #create solution
 parse_directory_name(PROJECT_NAME)
